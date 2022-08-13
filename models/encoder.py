@@ -165,8 +165,6 @@ class BiRNNEncoder(nn.Module):
         self._word_embedding = word_embedding
         self._rnn_cell = nn.LSTM(embedding_dim, hidden_dim // 2,
                                  batch_first=True, bidirectional=True)
-        self._rnn_cell_act = nn.LSTM(embedding_dim, hidden_dim // 2,
-                                 batch_first=True, bidirectional=True)
         self._drop_layer = nn.Dropout(dropout_rate)
 
     def forward(self, input_w, mask):

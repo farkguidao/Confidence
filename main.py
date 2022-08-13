@@ -84,14 +84,14 @@ if __name__ == '__main__':
         'lr': 1e-3,
         'wd': 1e-8,
         'dropout': 0.2,
-        'max_epochs': 60,
+        'max_epochs': 40,
         'gpus': 1
 
     }
     args = argparse.Namespace(**args)
     res_list=[]
 
-    for i in range(1):
+    for i in range(5):
         res = train(args)
         res_list.append(res)
 

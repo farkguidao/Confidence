@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from models.encoder import BiLSTMLayer
+from models.gcn_layers import ResidualGatedGCNLayer
 from utils.self_attention import ScaledDotProductAttention
 
 
@@ -43,7 +44,50 @@ def generate_edge_em(adj,len_list,pos,p):
 
 
 class ConfidenceDecoder(nn.Module):
-    def __init__(self,num_sent: int,
+    def __init__(self, num_sent: int,
+                 num_act: int,
+                 input_dim: int,
+                 hidden_dim: int,
+                 nhead: int,
+                 num_layer: int,
+                 dropout_rate: float):
+        super(ConfidenceDecoder, self).__init__()
+        self.num_act = num_act
+        self.num_sent = num_sent
+
+        self.transfer_sent_linear = nn.Linear(input_dim, hidden_dim)
+        self.transfer_act_linear = nn.Linear(input_dim, hidden_dim)
+
+        self.final_sent_linear = nn.Linear(hidden_dim, num_sent)
+        self.final_act_linear = nn.Linear(hidden_dim, num_act)
+
+
+        self.act_layers = nn.ModuleList(
+            [ResidualGatedGCNLayer(hidden_dim,dropout_rate) for _ in range(num_layer)])
+        self.sent_layers = nn.ModuleList(
+            [ResidualGatedGCNLayer(hidden_dim,dropout_rate) for _ in range(num_layer)])
+
+
+        self.sent_A_generator = nn.Sequential(nn.Linear(2 * (num_sent + num_act) + hidden_dim + hidden_dim, 2*hidden_dim),
+                                              nn.ReLU(),
+                                              nn.Linear(2*hidden_dim, hidden_dim)
+                                              )
+
+        self.act_A_generator = nn.Sequential(nn.Linear(2 * (num_sent + num_act) + hidden_dim + hidden_dim, 2*hidden_dim),
+                                             nn.ReLU(),
+                                             nn.Linear(2*hidden_dim, hidden_dim)
+                                             )
+
+
+        self.max_len = 100
+        self.postion_em = nn.Embedding(self.max_len * 2, hidden_dim)
+        self.type_em = nn.Embedding(3, hidden_dim)
+
+        a = torch.arange(self.max_len).expand(self.max_len, self.max_len)
+        self.register_buffer('pos_m', a - a.T + self.max_len)
+
+
+    def init(self,num_sent: int,
                  num_act: int,
                  input_dim: int,
                  hidden_dim: int,
@@ -62,9 +106,15 @@ class ConfidenceDecoder(nn.Module):
         self.final_act_linear = nn.Linear(hidden_dim, num_act)
 
         dk = hidden_dim//nhead
-        self.act_layers = nn.ModuleList([SpeakerAwareAttention(hidden_dim,nhead,dropout=dropout_rate) for _ in range(num_layer)])
+
+        self.act_layers = nn.ModuleList(
+            [ResidualGatedGCNLayer(hidden_dim,dropout_rate) for _ in range(num_layer)])
         self.sent_layers = nn.ModuleList(
-            [SpeakerAwareAttention(hidden_dim, nhead, dropout=dropout_rate) for _ in range(num_layer)])
+            [ResidualGatedGCNLayer(hidden_dim,dropout_rate) for _ in range(num_layer)])
+
+        # self.act_layers = nn.ModuleList([SpeakerAwareAttention(hidden_dim,nhead,dropout=dropout_rate) for _ in range(num_layer)])
+        # self.sent_layers = nn.ModuleList(
+        #     [SpeakerAwareAttention(hidden_dim, nhead, dropout=dropout_rate) for _ in range(num_layer)])
 
         # self.act_layers = nn.ModuleList(
         #     [ScaledDotProductAttention(hidden_dim,dk,dk,nhead,dropout=dropout_rate) for _ in range(num_layer)])
@@ -73,17 +123,17 @@ class ConfidenceDecoder(nn.Module):
 
         self.sent_A_generator = nn.Sequential(nn.Linear(2*(num_sent+num_act)+hidden_dim, hidden_dim),
                                               nn.ReLU(),
-                                              nn.Linear(hidden_dim,nhead),
+                                              nn.Linear(hidden_dim,hidden_dim),
                                               nn.Sigmoid())
 
         self.act_A_generator = nn.Sequential(nn.Linear(2*(num_sent+num_act)+hidden_dim, hidden_dim),
                                               nn.ReLU(),
-                                              nn.Linear(hidden_dim, nhead),
+                                              nn.Linear(hidden_dim, hidden_dim),
                                               nn.Sigmoid())
 
         self.max_len = 100
         self.postion_em = nn.Embedding(self.max_len*2,hidden_dim)
-        # self.type_em = nn.Embedding(2,hidden_dim)
+        self.type_em = nn.Embedding(3,hidden_dim)
 
         a = torch.arange(self.max_len).expand(self.max_len,self.max_len)
         self.register_buffer('pos_m',a-a.T+self.max_len)
@@ -93,7 +143,57 @@ class ConfidenceDecoder(nn.Module):
         # self.sent_lstm = BiLSTMLayer(hidden_dim,dropout_rate)
         self.nhead = nhead
 
-    def forward(self,sent_x,act_x,sent_logits,act_logits,len_list,adj):
+    def forward(self, sent_x, act_x, sent_logits, act_logits, len_list, adj):
+        """
+        :param sent_x:
+        :param act_x:
+        :param sent_logits:
+        :param act_logits:
+        :param len_list:
+        :param adj:
+        :return:
+        """
+        # step one
+        p = torch.cat([sent_logits, act_logits], -1)  # bs,seq_len,num_sent+num_act
+        # step two
+
+        # initial inputs
+        sent_x, act_x = self.transfer_sent_linear(sent_x), self.transfer_act_linear(act_x)
+        sent_x_, act_x_ = sent_x, act_x
+        # generate A
+        bs, seq_len, hidden_dim = sent_x.size()
+        p = torch.cat([p.reshape(bs, seq_len, 1, -1).expand(bs, seq_len, seq_len, self.num_act + self.num_sent),
+                       p.reshape(bs, 1, seq_len, -1).expand(bs, seq_len, seq_len, self.num_act + self.num_sent)],
+                      -1)  # bs,seq_len,seq_len,2*(num_sent+num_act)
+
+        pos_em = self.postion_em(self.pos_m[:seq_len, :seq_len]).expand(bs, seq_len,
+                                                                        seq_len,
+                                                                        hidden_dim)  # bs,seq_len,seq_len,hidden_dim
+        # 自环的类别
+        index = torch.arange(seq_len)
+        adj[:, index, index] = 2
+        type_em = self.type_em(adj) # bs,seq_len,seq_len,hidden_dim
+        em = torch.cat([p, pos_em,type_em], -1)  # 2*(num_sent+num_act) + hidden_dim + hidden_dim
+
+        sent_edge_em = self.sent_A_generator(em) # bs,seq_len,seq_len,hidden_dim
+        act_edge_em = self.act_A_generator(em) # bs,seq_len,seq_len,hidden_dim
+
+        # padding_mask
+        mask = torch.zeros_like(adj,dtype=torch.bool) # bs,seq_len,seq_len
+        for i, length in enumerate(len_list):
+            mask[i, :, length:] = True
+
+        # graph convolution
+        for sent_layer, act_layer in zip(self.sent_layers, self.act_layers):
+            sent_x,sent_edge_em = sent_layer(sent_x,sent_edge_em,mask)
+            act_x,act_edge_em = act_layer(act_x, act_edge_em, mask)
+
+        final_sent_logits, final_act_logits = self.final_sent_linear(sent_x_ + sent_x), self.final_act_linear(
+            act_x_ + act_x)
+
+        return final_sent_logits, final_act_logits
+
+    def forward1(self,sent_x,act_x,sent_logits,act_logits,len_list,adj):
         '''
         :param sent_x:
         :param act_x:
@@ -135,7 +235,8 @@ class ConfidenceDecoder(nn.Module):
 
         # generate same edge mask and other edge mask
         # padding_mask
-
+        # one = torch.ones_like(adj[0],dtype=torch.bool)
+        # windows_mask = one.triu(5 + 1) + one.triu(5 + 1).T
         same_mask = adj==0
         other_mask = ~same_mask
         for i,length in enumerate(len_list):

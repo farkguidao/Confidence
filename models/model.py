@@ -64,10 +64,10 @@ class Model(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(),
                                 lr=self.hparams.lr,
                                 weight_decay=self.hparams.wd)
-        # lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[40],
-        #                                                     gamma=0.1)
-        # return [optimizer],[lr_scheduler]
-        return optimizer
+        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30],
+                                                            gamma=0.1)
+        return [optimizer],[lr_scheduler]
+        # return optimizer
 
 
 
