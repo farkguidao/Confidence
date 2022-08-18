@@ -64,10 +64,10 @@ class Model(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(),
                                 lr=self.hparams.lr,
                                 weight_decay=self.hparams.wd)
-        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30],
-                                                            gamma=0.1)
-        return [optimizer],[lr_scheduler]
-        # return optimizer
+        # lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[30],
+        #                                                     gamma=0.1)
+        # return [optimizer],[lr_scheduler]
+        return optimizer
 
 
 
@@ -77,7 +77,7 @@ class Model(pl.LightningModule):
             sent_x, act_x, sl1,al1 = self.encoder(var_p,adj,mask)
         else:
             sent_x, act_x, sl1,al1 = self.encoder(var_uttn,adj,mask)
-        sl2,al2 = self.decoder(sent_x,act_x,sl1.detach(),al1.detach(),len_list,adj)
+        sl2,al2 = self.decoder(sent_x,act_x,sl1,al1,len_list,adj)
 
         sl1,al1 = self.flaten(sl1,len_list),self.flaten(al1,len_list)
         sl2,al2 = self.flaten(sl2,len_list),self.flaten(al2,len_list)

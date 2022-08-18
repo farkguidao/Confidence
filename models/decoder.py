@@ -188,8 +188,7 @@ class ConfidenceDecoder(nn.Module):
             sent_x,sent_edge_em = sent_layer(sent_x,sent_edge_em,mask)
             act_x,act_edge_em = act_layer(act_x, act_edge_em, mask)
 
-        final_sent_logits, final_act_logits = self.final_sent_linear(sent_x_ + sent_x), self.final_act_linear(
-            act_x_ + act_x)
+        final_sent_logits, final_act_logits = self.final_sent_linear(sent_x_+sent_x), self.final_act_linear(act_x_+act_x)
 
         return final_sent_logits, final_act_logits
 

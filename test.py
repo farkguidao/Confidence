@@ -14,23 +14,61 @@ from models.decoder import ConfidenceDecoder
 from models.encoder import BiEncoder
 from models.model import Model
 
+def test(model, trainer, dataloader, ckpt_path):
+    # model.set_final_step()
+    ckpt_base_path = ckpt_path + '/checkpoints/'
+
+    print('------------------------------act_score--------------------------------------------------')
+    res_act = trainer.test(model, dataloader, ckpt_path=ckpt_base_path + 'act.ckpt', verbose=False)[0]
+
+    print('------------------------------sent_score-------------------------------------------------')
+    res_sent = trainer.test(model, dataloader, ckpt_path=ckpt_base_path + 'sent.ckpt', verbose=False)[0]
+
+    res = {'actF1Score': res_act['actF1Score'],
+           'actPrecision': res_act['actPrecision'],
+           'actRecall': res_act['actRecall'],
+           'sentF1Score': res_sent['sentF1Score'],
+           'sentPrecision': res_sent['sentPrecision'],
+           'sentRecall': res_sent['sentRecall'],
+           }
+    return res
+
 if __name__ == '__main__':
-    args = {
+    # args = {
+    #     'dataset': 'dailydialogue',
+    #     'data_path': 'data/dailydialogue',
+    #     'batch_size': 32,
+    #     'pretrained_model': 'none',
+    #
+    #     'encoder_hidden_dim': 128,
+    #     'decoder_hidden_dim': 64,
+    #     'nhead': 4,
+    #     'num_layer': 3,
+    #     'garma': 1.,
+    #     'lr': 1e-3,
+    #     'wd': 1e-8,
+    #     'dropout': 0.2,
+    #     'max_epochs': 30,
+    #     'gpus': 1
+    #
+    # }
+
+    args={
         'dataset': 'mastodon',
         'data_path': 'data/mastodon',
         'batch_size': 16,
         'pretrained_model': 'none',
 
-        'encoder_hidden_dim': 128,
-        'decoder_hidden_dim': 128,
-        'nhead': 8,
+        'encoder_hidden_dim': 256,
+        'decoder_hidden_dim': 64,
+        'nhead': 4,
         'num_layer': 2,
+        'garma': 1.,
         'lr': 1e-3,
         'wd': 1e-8,
         'dropout': 0.2,
         'max_epochs': 30,
         'gpus': 1
-
     }
     args = argparse.Namespace(**args)
 
@@ -46,6 +84,7 @@ if __name__ == '__main__':
                   num_act=dataloader.num_act,
                   nhead=args.nhead,
                   num_layer=args.num_layer,
+                  garma=args.garma,
                   lr=args.lr,
                   wd=args.wd,
                   dropout=args.dropout,
@@ -54,16 +93,12 @@ if __name__ == '__main__':
     trainer = pl.Trainer(max_epochs=args.max_epochs,
                          gpus=args.gpus,
                          log_every_n_steps=1)
-    # trainer.fit(model,dataloader)
-    # ckpt_path = trainer.log_dir + '/checkpoints/' + os.listdir(trainer.log_dir + '/checkpoints')[0]
-    ckpt_path  = 'lightning_logs/version_0/checkpoints/epoch=9-step=160.ckpt'
-    # trainer.validate(model, dataloader.test_dataloader(), ckpt_path=ckpt_path)
-    dl=dataloader.test_dataloader()
-    model.set_final_step()
-    res=trainer.test(model, dl, ckpt_path='lightning_logs/version_43/checkpoints/act.ckpt')
+    # res = test(model, trainer, dataloader.test_dataloader(), 'lightning_logs/best/version_120')
+    res = test(model, trainer, dataloader.test_dataloader(), 'lightning_logs/best/version_269')
 
+    print('--------test result------')
+    print(res)
 
-    # trainer.test(model, dl, ckpt_path=ckpt_path)
 
 
 

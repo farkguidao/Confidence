@@ -84,10 +84,29 @@ if __name__ == '__main__':
         'lr': 1e-3,
         'wd': 1e-8,
         'dropout': 0.2,
-        'max_epochs': 40,
+        'max_epochs': 30,
         'gpus': 1
 
     }
+
+    # args={
+    #     'dataset': 'mastodon',
+    #     'data_path': 'data/mastodon',
+    #     'batch_size': 16,
+    #     'pretrained_model': 'none',
+    #
+    #     'encoder_hidden_dim': 256,
+    #     'decoder_hidden_dim': 64,
+    #     'nhead': 4,
+    #     'num_layer': 2,
+    #     'garma': 1.,
+    #     'lr': 1e-3,
+    #     'wd': 1e-8,
+    #     'dropout': 0.2,
+    #     'max_epochs': 30,
+    #     'gpus': 1
+    # }
+
     args = argparse.Namespace(**args)
     res_list=[]
 
